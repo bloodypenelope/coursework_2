@@ -15,23 +15,7 @@ from sql.sql_connector import MonitorSQLConnector
 from utils.interpolate import rbf_interpolate
 
 
-load_dotenv()
-
-host = os.getenv('HOST')
-port = os.getenv('PORT')
-user = os.getenv('USER')
-password = os.getenv('PASSWORD')
-database = os.getenv('DATABASE')
-
-connection = MonitorSQLConnector((host, port, user, password, database))
-
-
-with open("data.json", mode="r", encoding="utf-8") as file:
-    data = json.load(file)
-    structures = data["structures"]
-
-
-def get_structure_info(structure):
+def get_structure_info(data, structure):
     stations = []
     points = []
     info = data[structure]
@@ -49,7 +33,7 @@ def get_structure_info(structure):
     return size, stations, points
 
 
-def get_values(stations, timestamp, depth):
+def get_values(connection, stations, timestamp, depth):
     values = []
     interval = 24 * 3600
 
@@ -60,7 +44,7 @@ def get_values(stations, timestamp, depth):
     return values
 
 
-def update_depths(structure, cbox):
+def update_depths(connection, data, structure, cbox):
 
     info = data[structure]
 
@@ -71,13 +55,13 @@ def update_depths(structure, cbox):
     cbox['values'] = depths
 
 
-def plot(structure, date, depth, fig, ax, canvas):
+def plot(connection, data, structure, date, depth, fig, ax, canvas):
     timestamp = int(time.mktime(
         datetime.datetime.strptime(date, "%d/%m/%Y").timetuple()))
     depth = int(float(depth) * 10)
 
-    size, stations, points = get_structure_info(structure)
-    values = get_values(stations, timestamp, depth)
+    size, stations, points = get_structure_info(data, structure)
+    values = get_values(connection, stations, timestamp, depth)
 
     size_x, size_y = size
     grid_x = np.linspace(0, size_x, 100)
@@ -106,6 +90,19 @@ def plot(structure, date, depth, fig, ax, canvas):
 
 
 def main():
+    with open("data.json", mode="r", encoding="utf-8") as file:
+        data = json.load(file)
+        structures = data["structures"]
+
+    load_dotenv()
+    host = os.getenv('HOST')
+    port = os.getenv('PORT')
+    user = os.getenv('USER')
+    password = os.getenv('PASSWORD')
+    database = os.getenv('DATABASE')
+
+    connection = MonitorSQLConnector((host, port, user, password, database))
+
     depths = []
 
     root = tk.Tk()
@@ -118,8 +115,8 @@ def main():
 
     frame1 = tk.Frame(frame)
     frame1.configure(background="white")
-    tk.Label(frame1, text="Расчет средней температуры в почве",
-             pady=16, font=('calibre', 24), background="white")\
+    tk.Label(frame1, text="Расчет средней температуры за день в грунте",
+             padx=10, pady=16, font=('calibre', 24), background="white")\
         .grid(columnspan=3)
 
     date = tk.StringVar()
@@ -144,13 +141,15 @@ def main():
     cbox.grid(row=2, column=2)
 
     structure.trace_add(
-        'write', lambda *_: update_depths(structure.get(), cbox))
+        'write', lambda *_: update_depths(connection, data,
+                                          structure.get(), cbox))
 
     frame1.pack(side=tk.TOP, pady=(20, 0))
 
     tk.Button(frame, text="Построить график", font=(
         'calibre', 12), width=16,
-        command=lambda: plot(structure.get(), date.get(), depth.get(),
+        command=lambda: plot(connection, data,
+                             structure.get(), date.get(), depth.get(),
                              fig, ax, canvas)).pack(pady=(20, 0))
 
     frame.pack(side=tk.TOP, padx=10, pady=0)
